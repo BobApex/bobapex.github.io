@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live</h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v2</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -198,6 +198,14 @@ function onData(uuid, dv) {
 }
 
 // ---------- Bluetooth ----------
+function errText(e) {
+  if (e == null) return 'unknown error (no details)';
+  if (typeof e === 'string') return e;
+  const parts = [e.name, e.message, e.code != null ? 'code ' + e.code : ''].filter(Boolean);
+  if (parts.length) return parts.join(': ');
+  try { const j = JSON.stringify(e); if (j && j !== '{}') return j; } catch (x) {}
+  return String(e);
+}
 const conn = { bike: null, hr: null };
 function banner(msg) { const b = $('banner'); b.textContent = msg; b.style.display = msg ? 'block' : 'none'; }
 function setStatus(which, text, state) {
@@ -249,7 +257,7 @@ function watchDisconnect(which, device) {
     log(`${device.name || which} disconnected`);
     for (let i = 0; i < 3; i++) {
       await new Promise(r => setTimeout(r, 2000));
-      try { await connect(which, device); return; } catch (e) { log(`Reconnect ${i + 1} failed: ${e.message}`); }
+      try { await connect(which, device); return; } catch (e) { log(`Reconnect ${i + 1} failed: ${errText(e)}`); }
     }
     conn[which] = null;
     setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: disconnected`, '');
@@ -260,18 +268,21 @@ async function pick(which) {
   banner('');
   if (!navigator.bluetooth) return banner('This browser has no Web Bluetooth. Use Chrome or Edge on Mac, Windows or Android, or the Bluefy browser on iPhone/iPad. Demo mode works anywhere.');
   const extra = $('optUuids').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
-  const optional = [S.FTMS, S.CP, S.CSC, S.HR, S.BATT, S.DIS, ...extra];
+  const F = full;
+  const optional = [F(S.FTMS), F(S.CP), F(S.CSC), F(S.HR), F(S.BATT), F(S.DIS), ...extra];
   let opts;
-  if (which === 'hr') opts = { filters: [{ services: [S.HR] }], optionalServices: [S.BATT] };
+  if (which === 'hr') opts = { filters: [{ services: [F(S.HR)] }], optionalServices: [F(S.BATT)] };
   else if ($('optAll').checked) opts = { acceptAllDevices: true, optionalServices: optional };
-  else opts = { filters: [{ services: [S.FTMS] }, { services: [S.CP] }, { services: [S.CSC] }], optionalServices: optional };
+  else opts = { filters: [{ services: [F(S.FTMS)] }, { services: [F(S.CP)] }, { services: [F(S.CSC)] }, { namePrefix: 'apex' }, { namePrefix: 'Apex' }, { namePrefix: 'APEX' }], optionalServices: optional };
+  log(`requestDevice ${JSON.stringify(opts)}`);
   try {
     const device = await navigator.bluetooth.requestDevice(opts);
     watchDisconnect(which, device);
     await connect(which, device);
   } catch (e) {
-    if (e.name !== 'NotFoundError') banner(`Bluetooth: ${e.message}`);
-    log(`requestDevice: ${e.name} ${e.message}`);
+    const msg = errText(e);
+    if (!(e && e.name === 'NotFoundError')) banner(`Bluetooth: ${msg}`);
+    log(`requestDevice failed: ${msg}`);
     if (!conn[which]) setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: not connected`, '');
   }
 }
