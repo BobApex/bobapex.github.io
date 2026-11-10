@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v2</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v3</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -76,6 +76,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
     <label class="opt"><input type="checkbox" id="optAll"> Show all nearby devices when connecting (use if the bike doesn't appear)</label>
     <label class="opt">Extra service UUIDs to request (comma-separated, for proprietary protocols):
       <input type="text" id="optUuids" placeholder="e.g. 6e40fff0-b5a3-f393-e0a9-e50e24dcca9e"></label>
+    <button id="btnCopyLog" style="margin-top:8px">Copy log</button> <span id="copyMsg" class="sub"></span>
     <pre id="log"></pre>
   </details>
 </main>
@@ -83,7 +84,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 (() => {
 const $ = id => document.getElementById(id);
 const full = n => '0000' + n.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb';
-const S = { FTMS: 0x1826, CP: 0x1818, CSC: 0x1816, HR: 0x180d, BATT: 0x180f, DIS: 0x180a };
+const S = { FTMS: 0x1826, CP: 0x1818, CSC: 0x1816, HR: 0x180d, BATT: 0x180f, DIS: 0x180a, FFF0: 0xfff0, FFE0: 0xffe0 };
 const CH = { INDOOR: full(0x2ad2), CP: full(0x2a63), CSC: full(0x2a5b), HR: full(0x2a37), BATT: full(0x2a19) };
 const NAMES = {
   [full(0x1826)]: 'Fitness Machine (FTMS)', [full(0x1818)]: 'Cycling Power', [full(0x1816)]: 'Speed & Cadence',
@@ -99,9 +100,14 @@ const logLines = [];
 function log(msg) {
   const t = new Date().toLocaleTimeString();
   logLines.push(`${t}  ${msg}`);
-  if (logLines.length > 300) logLines.splice(0, logLines.length - 300);
+  if (logLines.length > 1000) logLines.splice(0, logLines.length - 1000);
   if ($('dbg').open) { $('log').textContent = logLines.join('\n'); $('log').scrollTop = 1e9; }
 }
+$('btnCopyLog').onclick = async () => {
+  const txt = logLines.join('\n');
+  try { await navigator.clipboard.writeText(txt); $('copyMsg').textContent = 'Copied ' + logLines.length + ' lines'; }
+  catch (e) { const r = document.createRange(); r.selectNodeContents($('log')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); $('copyMsg').textContent = 'Selected - use Copy'; }
+};
 $('dbg').addEventListener('toggle', () => { $('log').textContent = logLines.join('\n'); });
 const hex = dv => Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).map(b => b.toString(16).padStart(2, '0')).join(' ');
 
@@ -269,11 +275,11 @@ async function pick(which) {
   if (!navigator.bluetooth) return banner('This browser has no Web Bluetooth. Use Chrome or Edge on Mac, Windows or Android, or the Bluefy browser on iPhone/iPad. Demo mode works anywhere.');
   const extra = $('optUuids').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   const F = full;
-  const optional = [F(S.FTMS), F(S.CP), F(S.CSC), F(S.HR), F(S.BATT), F(S.DIS), ...extra];
+  const optional = [F(S.FTMS), F(S.CP), F(S.CSC), F(S.HR), F(S.BATT), F(S.DIS), F(S.FFF0), F(S.FFE0), ...extra];
   let opts;
   if (which === 'hr') opts = { filters: [{ services: [F(S.HR)] }], optionalServices: [F(S.BATT)] };
   else if ($('optAll').checked) opts = { acceptAllDevices: true, optionalServices: optional };
-  else opts = { filters: [{ services: [F(S.FTMS)] }, { services: [F(S.CP)] }, { services: [F(S.CSC)] }, { namePrefix: 'apex' }, { namePrefix: 'Apex' }, { namePrefix: 'APEX' }], optionalServices: optional };
+  else opts = { filters: [{ services: [F(S.FTMS)] }, { services: [F(S.CP)] }, { services: [F(S.CSC)] }, { services: [F(S.FFF0)] }, { namePrefix: 'WLT' }, { namePrefix: 'apex' }, { namePrefix: 'Apex' }, { namePrefix: 'APEX' }], optionalServices: optional };
   log(`requestDevice ${JSON.stringify(opts)}`);
   try {
     const device = await navigator.bluetooth.requestDevice(opts);
