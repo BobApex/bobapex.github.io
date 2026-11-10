@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v3</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v4</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -56,7 +56,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </div>
 <main>
   <div class="grid big">
-    <div class="tile" id="t-power"><div class="label">Power</div><div class="val"><span id="vPower">—</span><span class="unit">W</span></div><div class="sub" id="xPower"></div></div>
+    <div class="tile" id="t-power"><div class="label">Power</div><div class="val"><span id="vPower">—</span><span class="unit">W</span></div><div class="sub" id="xPower"></div><div class="sub" id="xPowerNote"></div></div>
     <div class="tile" id="t-cadence"><div class="label">Cadence</div><div class="val"><span id="vCadence">—</span><span class="unit">rpm</span></div><div class="sub" id="xCadence"></div></div>
   </div>
   <div class="grid">
@@ -85,12 +85,13 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 const $ = id => document.getElementById(id);
 const full = n => '0000' + n.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb';
 const S = { FTMS: 0x1826, CP: 0x1818, CSC: 0x1816, HR: 0x180d, BATT: 0x180f, DIS: 0x180a, FFF0: 0xfff0, FFE0: 0xffe0 };
-const CH = { INDOOR: full(0x2ad2), CP: full(0x2a63), CSC: full(0x2a5b), HR: full(0x2a37), BATT: full(0x2a19) };
+const CH = { INDOOR: full(0x2ad2), CP: full(0x2a63), CSC: full(0x2a5b), HR: full(0x2a37), BATT: full(0x2a19), APEX_N: full(0xfff1), APEX_W: full(0xfff2) };
 const NAMES = {
   [full(0x1826)]: 'Fitness Machine (FTMS)', [full(0x1818)]: 'Cycling Power', [full(0x1816)]: 'Speed & Cadence',
   [full(0x180d)]: 'Heart Rate', [full(0x180f)]: 'Battery', [full(0x180a)]: 'Device Information',
   [CH.INDOOR]: 'Indoor Bike Data', [CH.CP]: 'Cycling Power Measurement', [CH.CSC]: 'CSC Measurement',
-  [CH.HR]: 'Heart Rate Measurement', [CH.BATT]: 'Battery Level'
+  [CH.HR]: 'Heart Rate Measurement', [CH.BATT]: 'Battery Level',
+  [full(0xfff0)]: 'Apex (FFF0)', [CH.APEX_N]: 'Apex data (FFF1)', [CH.APEX_W]: 'Apex cmd (FFF2)'
 };
 const nm = u => NAMES[u] || u;
 const WHEEL_CIRC_M = 2.105; // only used if the bike reports wheel revolutions (CP/CSC)
@@ -139,6 +140,64 @@ function parseIndoorBike(dv) {
   } catch (e) { /* short packet: keep what parsed */ }
   return r;
 }
+// ---------- Apex / WLT8266BM proprietary protocol ----------
+// Protocol details from the open-source QZ (qdomyos-zwift) Apex driver:
+// write FFF2, notify FFF1; 10-byte packets with byte[2]==0x31 carry
+// cadence (byte4 x2) and dial resistance (33 - byte5). Power is estimated
+// from a resistance x RPM table (QZ's user-measured data), not measured.
+const APEX_POLL = [0xaa, 0x55, 0xe0, 0x00, 0x00, 0x00, 0x00, 0xe0, 0xc3, 0x3c];
+const APEX_INIT = [0xeb, 0x50, 0x51, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0xa2];
+const APEX_POWER = [
+  [12,24,36,48,61,73,85,97,109,121,133,145,157,170,182],[13,27,40,53,67,80,93,107,120,133,147,160,173,187,200],
+  [15,29,44,58,73,87,102,117,131,146,160,175,189,204,219],[16,32,48,64,80,95,111,127,143,159,175,191,207,223,239],
+  [17,34,51,68,85,102,118,135,152,169,186,203,220,237,254],[18,37,55,74,92,110,129,147,165,184,202,221,239,257,276],
+  [19,39,58,77,97,116,136,155,174,194,213,232,252,271,291],[21,42,62,83,104,125,146,166,187,208,229,250,271,291,312],
+  [22,44,66,88,110,132,154,176,198,220,242,264,286,308,330],[23,46,69,92,116,139,162,185,208,231,254,277,300,324,347],
+  [24,49,73,98,122,146,171,195,219,244,268,293,317,341,366],[26,51,77,102,128,153,179,204,230,255,281,307,332,358,383],
+  [27,54,80,107,134,161,188,214,241,268,295,322,348,375,402],[28,56,83,111,139,167,195,222,250,278,306,334,362,389,417],
+  [29,58,87,117,146,175,204,233,262,292,321,350,379,408,437],[30,61,91,121,152,182,212,242,273,303,333,364,394,424,455],
+  [32,63,95,126,158,189,221,253,284,316,347,379,410,442,473],[33,66,99,132,165,198,231,264,297,330,363,396,429,462,495],
+  [34,68,102,136,171,205,239,273,307,341,375,409,443,478,512]];
+function apexPower(res, rpm) {
+  if (!(rpm > 0) || !(res > 0)) return 0;
+  const row = APEX_POWER[Math.max(1, Math.min(19, Math.round(res))) - 1];
+  if (rpm <= 10) return row[0] * rpm / 10;
+  if (rpm >= 150) return row[14] * rpm / 150;
+  const i = Math.min(13, Math.floor((rpm - 1) / 10)), lo = (i + 1) * 10;
+  return row[i] + (rpm - lo) / 10 * (row[i + 1] - row[i]);
+}
+let apexRes = null, apexCad = 0;
+function parseApex(dv) {
+  if (dv.byteLength !== 10 || dv.getUint8(2) !== 0x31) return null;
+  const raw = dv.getUint8(5);
+  if (raw >= 1 && raw <= 32) apexRes = 33 - raw;
+  if (dv.getUint8(3) === 0) apexCad = dv.getUint8(4) * 2;   // non-zero byte3 = known bogus cadence spike
+  return { resistance: apexRes, cadence: apexCad };
+}
+let apexPollTimer = null;
+async function apexWrite(c, bytes, label) {
+  const buf = new Uint8Array(bytes);
+  try {
+    if (c.properties.writeWithoutResponse && c.writeValueWithoutResponse) await c.writeValueWithoutResponse(buf);
+    else await c.writeValue(buf);
+    if (label) log(`>> ${label}: ${bytes.map(b => b.toString(16).padStart(2, '0')).join(' ')}`);
+  } catch (e) { log(`write ${label || ''} failed: ${errText(e)}`); }
+}
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+async function apexStart(server) {
+  let svc;
+  try { svc = await server.getPrimaryService(full(0xfff0)); } catch (e) { return false; }
+  const w = await svc.getCharacteristic(CH.APEX_W);
+  log('Apex protocol: sending poll + init');
+  if (apexPollTimer) clearInterval(apexPollTimer);
+  await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
+  await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
+  for (let i = 0; i < 3; i++) { await apexWrite(w, APEX_INIT, 'init'); await sleep(500); }
+  apexPollTimer = setInterval(() => { if (server.connected) apexWrite(w, APEX_POLL, ''); else { clearInterval(apexPollTimer); apexPollTimer = null; } }, 5000);
+  log('Apex init done - start pedalling');
+  return true;
+}
+
 function parseCP(dv) {
   const r = {};
   try {
@@ -198,6 +257,14 @@ function onData(uuid, dv) {
     if ('wheelRevs' in r) setM('speed', trk.cscWheel(r.wheelRevs, r.wheelTime) * WHEEL_CIRC_M * 3.6, 3, 'CSC');
   } else if (uuid === CH.HR) {
     setM('hr', parseHR(dv), 1, 'HR strap');
+  } else if (uuid === CH.APEX_N) {
+    const r = parseApex(dv);
+    if (r) {
+      if (r.resistance != null) setM('resistance', r.resistance, 1, 'Apex');
+      setM('cadence', r.cadence, 1, 'Apex');
+      setM('speed', r.cadence * 0.37497622, 1, 'Apex');
+      setM('power', apexPower(r.resistance, r.cadence), 1, 'Apex (est.)');
+    }
   } else if (uuid === CH.BATT) {
     log(`Battery: ${dv.getUint8(0)}%`);
   }
@@ -250,6 +317,12 @@ async function connect(which, device) {
   const server = await device.gatt.connect();
   const known = await subscribeAll(server, which);
   conn[which] = device;
+  let apex = false;
+  if (which === 'bike') {
+    setStatus(which, `Bike: ${device.name || 'connected'} · starting…`, 'warn');
+    apex = await apexStart(server);
+    if (apex) known.push('Apex protocol');
+  }
   setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: ${device.name || 'connected'}${known.length ? ' · ' + known.join(', ') : ' · no standard fitness service'}`, 'on');
   if (which === 'bike' && !known.length)
     banner('Connected, but the bike exposes no standard fitness service. Open “Bluetooth details & raw data” to see what it does send.');
@@ -329,7 +402,7 @@ $('btnReset').onclick = () => { active = 0; distInt = 0; energyJ = 0; samples = 
 
 setInterval(() => {
   const now = performance.now();
-  for (const k of ['power', 'cadence', 'speed']) if (M[k].v != null && now - M[k].t > 4000) { M[k].v = 0; M[k].rank = 99; }
+  for (const k of ['power', 'cadence', 'speed']) if (M[k].v != null && now - M[k].t > 6000) { M[k].v = 0; M[k].rank = 99; }
   if (M.hr.v != null && now - M.hr.t > 10000) { M.hr.v = null; M.hr.rank = 99; }
   if (!running) return;
   const p = M.power.v || 0, c = M.cadence.v || 0, s = M.speed.v || 0, h = M.hr.v;
@@ -367,6 +440,7 @@ function render() {
   $('xCadence').textContent = `avg ${avg(st.sumC, st.nC)} · max ${Math.round(st.maxC)}`;
   $('xHr').textContent = st.nH ? `avg ${avg(st.sumH, st.nH)} · max ${Math.round(st.maxH)}` : (M.hr.src ? M.hr.src : '');
   $('xSpeed').textContent = st.maxS ? `max ${st.maxS.toFixed(1)}` : '';
+  $('xPowerNote').textContent = (M.power.src || '').includes('est.') ? 'estimated from resistance × cadence' : '';
   const srcs = [...new Set(['power', 'cadence', 'speed'].map(k => M[k].src).filter(Boolean))];
   $('sSrc').textContent = srcs.length ? 'Source: ' + srcs.join(', ') : '';
 }
