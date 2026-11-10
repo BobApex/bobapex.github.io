@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bike Live</title>
+<style>
+:root{--bg:#0f1115;--panel:#181b22;--line:#2a2f3a;--text:#e8eaf0;--muted:#8a93a6;--power:#ff8a3d;--cad:#3db8ff;--hr:#ff4d6d;--ok:#3ddc84;--warn:#ffc53d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0 auto 0 0}
+button{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+button.primary{background:var(--power);border-color:var(--power);color:#111;font-weight:600}
+button:disabled{opacity:.4;cursor:default}
+.bar{display:flex;flex-wrap:wrap;gap:14px;padding:8px 16px;font-size:13px;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:middle}
+.dot.on{background:var(--ok)}.dot.warn{background:var(--warn)}
+.banner{margin:10px 16px;padding:10px 12px;border-radius:8px;background:#3a2a10;color:#ffd99a;font-size:14px;display:none}
+main{padding:12px 16px 40px;max-width:1100px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.grid.big{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));margin-bottom:10px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.label{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.val{font-size:38px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.15}
+.big .val{font-size:72px}
+.unit{font-size:15px;color:var(--muted);font-weight:500;margin-left:4px}
+.sub{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+#t-power .val{color:var(--power)}#t-cadence .val{color:var(--cad)}#t-hr .val{color:var(--hr)}
+.chartwrap{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px}
+canvas{width:100%;height:220px;display:block}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);padding:2px 4px 6px}
+.legend i{display:inline-block;width:10px;height:3px;margin-right:5px;vertical-align:middle}
+details{margin-top:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+summary{cursor:pointer;color:var(--muted)}
+pre{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:8px 0 0}
+label.opt{display:block;margin:8px 0;font-size:13px;color:var(--muted)}
+input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:12px ui-monospace,Menlo,monospace}
+@media (max-width:420px){.big .val{font-size:56px}.val{font-size:32px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Bike Live</h1>
+  <button class="primary" id="btnBike">Connect bike</button>
+  <button id="btnHr">Connect HR strap</button>
+  <button id="btnDemo">Demo</button>
+  <button id="btnReset">Reset</button>
+  <button id="btnCsv">CSV</button>
+</header>
+<div class="banner" id="banner"></div>
+<div class="bar">
+  <span><span class="dot" id="dBike"></span><span id="sBike">Bike: not connected</span></span>
+  <span><span class="dot" id="dHr"></span><span id="sHr">HR: not connected</span></span>
+  <span id="sSrc"></span>
+</div>
+<main>
+  <div class="grid big">
+    <div class="tile" id="t-power"><div class="label">Power</div><div class="val"><span id="vPower">—</span><span class="unit">W</span></div><div class="sub" id="xPower"></div></div>
+    <div class="tile" id="t-cadence"><div class="label">Cadence</div><div class="val"><span id="vCadence">—</span><span class="unit">rpm</span></div><div class="sub" id="xCadence"></div></div>
+  </div>
+  <div class="grid">
+    <div class="tile"><div class="label">Time</div><div class="val" id="vTime">0:00</div><div class="sub">pedalling time</div></div>
+    <div class="tile" id="t-hr"><div class="label">Heart rate</div><div class="val"><span id="vHr">—</span><span class="unit">bpm</span></div><div class="sub" id="xHr"></div></div>
+    <div class="tile"><div class="label">Speed</div><div class="val"><span id="vSpeed">—</span><span class="unit">km/h</span></div><div class="sub" id="xSpeed"></div></div>
+    <div class="tile"><div class="label">Distance</div><div class="val"><span id="vDist">0.00</span><span class="unit">km</span></div><div class="sub" id="xDist"></div></div>
+    <div class="tile"><div class="label">Resistance</div><div class="val"><span id="vRes">—</span></div><div class="sub">level</div></div>
+    <div class="tile"><div class="label">Energy</div><div class="val"><span id="vKcal">0</span><span class="unit">kcal</span></div><div class="sub" id="xKcal"></div></div>
+  </div>
+  <div class="chartwrap">
+    <div class="legend"><span><i style="background:var(--power)"></i>Power</span><span><i style="background:var(--cad)"></i>Cadence</span><span><i style="background:var(--hr)"></i>HR</span><span>last 5 min</span></div>
+    <canvas id="chart"></canvas>
+  </div>
+  <details id="dbg">
+    <summary>Bluetooth details &amp; raw data</summary>
+    <label class="opt"><input type="checkbox" id="optAll"> Show all nearby devices when connecting (use if the bike doesn't appear)</label>
+    <label class="opt">Extra service UUIDs to request (comma-separated, for proprietary protocols):
+      <input type="text" id="optUuids" placeholder="e.g. 6e40fff0-b5a3-f393-e0a9-e50e24dcca9e"></label>
+    <pre id="log"></pre>
+  </details>
+</main>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const full = n => '0000' + n.toString(16).padStart(4, '0') + '-0000-1000-8000-00805f9b34fb';
+const S = { FTMS: 0x1826, CP: 0x1818, CSC: 0x1816, HR: 0x180d, BATT: 0x180f, DIS: 0x180a };
+const CH = { INDOOR: full(0x2ad2), CP: full(0x2a63), CSC: full(0x2a5b), HR: full(0x2a37), BATT: full(0x2a19) };
+const NAMES = {
+  [full(0x1826)]: 'Fitness Machine (FTMS)', [full(0x1818)]: 'Cycling Power', [full(0x1816)]: 'Speed & Cadence',
+  [full(0x180d)]: 'Heart Rate', [full(0x180f)]: 'Battery', [full(0x180a)]: 'Device Information',
+  [CH.INDOOR]: 'Indoor Bike Data', [CH.CP]: 'Cycling Power Measurement', [CH.CSC]: 'CSC Measurement',
+  [CH.HR]: 'Heart Rate Measurement', [CH.BATT]: 'Battery Level'
+};
+const nm = u => NAMES[u] || u;
+const WHEEL_CIRC_M = 2.105; // only used if the bike reports wheel revolutions (CP/CSC)
+
+// ---------- logging ----------
+const logLines = [];
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logLines.push(`${t}  ${msg}`);
+  if (logLines.length > 300) logLines.splice(0, logLines.length - 300);
+  if ($('dbg').open) { $('log').textContent = logLines.join('\n'); $('log').scrollTop = 1e9; }
+}
+$('dbg').addEventListener('toggle', () => { $('log').textContent = logLines.join('\n'); });
+const hex = dv => Array.from(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+// ---------- metric state (lower rank = preferred source) ----------
+const KEYS = ['power', 'cadence', 'speed', 'hr', 'resistance', 'distance', 'kcal'];
+const M = {}; KEYS.forEach(k => M[k] = { v: null, rank: 99, t: 0, src: '' });
+function setM(k, v, rank, src) {
+  if (v == null || Number.isNaN(v)) return;
+  const m = M[k], now = performance.now();
+  if (rank <= m.rank || now - m.t > 5000) { m.v = v; m.rank = rank; m.t = now; m.src = src; }
+  schedule();
+}
+
+// ---------- parsers ----------
+function parseIndoorBike(dv) {
+  const r = {}; let o = 0;
+  try {
+    const f = dv.getUint16(0, true); o = 2;
+    if (!(f & 0x1)) { r.speed = dv.getUint16(o, true) / 100; o += 2; }   // bit0 = More Data; 0 => speed present
+    if (f & 0x2) o += 2;                                                   // avg speed
+    if (f & 0x4) { r.cadence = dv.getUint16(o, true) / 2; o += 2; }
+    if (f & 0x8) o += 2;                                                   // avg cadence
+    if (f & 0x10) { r.distance = dv.getUint16(o, true) | (dv.getUint8(o + 2) << 16); o += 3; }
+    if (f & 0x20) { r.resistance = dv.getInt16(o, true); o += 2; }
+    if (f & 0x40) { r.power = dv.getInt16(o, true); o += 2; }
+    if (f & 0x80) o += 2;                                                  // avg power
+    if (f & 0x100) { const k = dv.getUint16(o, true); if (k !== 0xffff) r.kcal = k; o += 5; }
+    if (f & 0x200) { const h = dv.getUint8(o); if (h) r.hr = h; o += 1; }
+  } catch (e) { /* short packet: keep what parsed */ }
+  return r;
+}
+function parseCP(dv) {
+  const r = {};
+  try {
+    const f = dv.getUint16(0, true); let o = 2;
+    r.power = dv.getInt16(o, true); o += 2;
+    if (f & 0x1) o += 1;
+    if (f & 0x4) o += 2;
+    if (f & 0x10) { r.wheelRevs = dv.getUint32(o, true); r.wheelTime = dv.getUint16(o + 4, true); o += 6; }
+    if (f & 0x20) { r.crankRevs = dv.getUint16(o, true); r.crankTime = dv.getUint16(o + 2, true); o += 4; }
+  } catch (e) {}
+  return r;
+}
+function parseCSC(dv) {
+  const r = {};
+  try {
+    const f = dv.getUint8(0); let o = 1;
+    if (f & 0x1) { r.wheelRevs = dv.getUint32(o, true); r.wheelTime = dv.getUint16(o + 4, true); o += 6; }
+    if (f & 0x2) { r.crankRevs = dv.getUint16(o, true); r.crankTime = dv.getUint16(o + 2, true); o += 4; }
+  } catch (e) {}
+  return r;
+}
+const parseHR = dv => (dv.getUint8(0) & 1) ? dv.getUint16(1, true) : dv.getUint8(1);
+
+// cumulative revolution counters -> rate
+function revTracker(revMod, timeRes) {
+  let prev = null, rate = 0, last = performance.now();
+  return (revs, time) => {
+    const now = performance.now();
+    if (prev) {
+      const dr = ((revs - prev.revs) % revMod + revMod) % revMod;
+      const dt = (((time - prev.time) % 65536) + 65536) % 65536 / timeRes;
+      if (dr > 0 && dt > 0) { rate = dr / dt; last = now; }
+      else if (now - last > 3000) rate = 0;
+    }
+    prev = { revs, time };
+    return rate; // revs per second
+  };
+}
+const trk = {
+  cpCrank: revTracker(65536, 1024), cpWheel: revTracker(4294967296, 2048),
+  cscCrank: revTracker(65536, 1024), cscWheel: revTracker(4294967296, 1024)
+};
+
+function onData(uuid, dv) {
+  log(`${nm(uuid)}: ${hex(dv)}`);
+  if (uuid === CH.INDOOR) {
+    const r = parseIndoorBike(dv);
+    for (const k of ['speed', 'cadence', 'power', 'resistance', 'distance', 'kcal', 'hr']) if (k in r) setM(k, r[k], k === 'hr' ? 2 : 1, 'FTMS');
+  } else if (uuid === CH.CP) {
+    const r = parseCP(dv);
+    setM('power', r.power, 2, 'Cycling Power');
+    if ('crankRevs' in r) setM('cadence', trk.cpCrank(r.crankRevs, r.crankTime) * 60, 2, 'Cycling Power');
+    if ('wheelRevs' in r) setM('speed', trk.cpWheel(r.wheelRevs, r.wheelTime) * WHEEL_CIRC_M * 3.6, 2, 'Cycling Power');
+  } else if (uuid === CH.CSC) {
+    const r = parseCSC(dv);
+    if ('crankRevs' in r) setM('cadence', trk.cscCrank(r.crankRevs, r.crankTime) * 60, 3, 'CSC');
+    if ('wheelRevs' in r) setM('speed', trk.cscWheel(r.wheelRevs, r.wheelTime) * WHEEL_CIRC_M * 3.6, 3, 'CSC');
+  } else if (uuid === CH.HR) {
+    setM('hr', parseHR(dv), 1, 'HR strap');
+  } else if (uuid === CH.BATT) {
+    log(`Battery: ${dv.getUint8(0)}%`);
+  }
+}
+
+// ---------- Bluetooth ----------
+const conn = { bike: null, hr: null };
+function banner(msg) { const b = $('banner'); b.textContent = msg; b.style.display = msg ? 'block' : 'none'; }
+function setStatus(which, text, state) {
+  $(which === 'bike' ? 'sBike' : 'sHr').textContent = text;
+  $(which === 'bike' ? 'dBike' : 'dHr').className = 'dot' + (state ? ' ' + state : '');
+}
+
+async function subscribeAll(server, which) {
+  const services = await server.getPrimaryServices();
+  for (const s of services) {
+    log(`Service ${nm(s.uuid)}`);
+    let chars = [];
+    try { chars = await s.getCharacteristics(); } catch (e) { log(`  (can't list characteristics: ${e.message})`); continue; }
+    for (const c of chars) {
+      const p = c.properties, props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter(x => p[x]).join(',');
+      log(`  Char ${nm(c.uuid)} [${props}]`);
+      if (s.uuid === full(S.DIS) && p.read) {
+        try { const v = await c.readValue(); log(`    = ${new TextDecoder().decode(v)}`); } catch (e) {}
+      }
+      if (p.notify || p.indicate) {
+        try {
+          c.addEventListener('characteristicvaluechanged', ev => onData(c.uuid, ev.target.value));
+          await c.startNotifications();
+          log(`    subscribed`);
+        } catch (e) { log(`    subscribe failed: ${e.message}`); }
+      }
+    }
+  }
+  const have = services.map(s => s.uuid);
+  const known = [S.FTMS, S.CP, S.CSC, S.HR].map(full).filter(u => have.includes(u)).map(nm);
+  return known;
+}
+
+async function connect(which, device) {
+  setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: connecting to ${device.name || 'device'}…`, 'warn');
+  const server = await device.gatt.connect();
+  const known = await subscribeAll(server, which);
+  conn[which] = device;
+  setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: ${device.name || 'connected'}${known.length ? ' · ' + known.join(', ') : ' · no standard fitness service'}`, 'on');
+  if (which === 'bike' && !known.length)
+    banner('Connected, but the bike exposes no standard fitness service. Open “Bluetooth details & raw data” to see what it does send.');
+  startSession();
+  keepAwake();
+}
+
+function watchDisconnect(which, device) {
+  device.addEventListener('gattserverdisconnected', async () => {
+    setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: disconnected, retrying…`, 'warn');
+    log(`${device.name || which} disconnected`);
+    for (let i = 0; i < 3; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      try { await connect(which, device); return; } catch (e) { log(`Reconnect ${i + 1} failed: ${e.message}`); }
+    }
+    conn[which] = null;
+    setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: disconnected`, '');
+  });
+}
+
+async function pick(which) {
+  banner('');
+  if (!navigator.bluetooth) return banner('This browser has no Web Bluetooth. Use Chrome or Edge on Mac, Windows or Android, or the Bluefy browser on iPhone/iPad. Demo mode works anywhere.');
+  const extra = $('optUuids').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  const optional = [S.FTMS, S.CP, S.CSC, S.HR, S.BATT, S.DIS, ...extra];
+  let opts;
+  if (which === 'hr') opts = { filters: [{ services: [S.HR] }], optionalServices: [S.BATT] };
+  else if ($('optAll').checked) opts = { acceptAllDevices: true, optionalServices: optional };
+  else opts = { filters: [{ services: [S.FTMS] }, { services: [S.CP] }, { services: [S.CSC] }], optionalServices: optional };
+  try {
+    const device = await navigator.bluetooth.requestDevice(opts);
+    watchDisconnect(which, device);
+    await connect(which, device);
+  } catch (e) {
+    if (e.name !== 'NotFoundError') banner(`Bluetooth: ${e.message}`);
+    log(`requestDevice: ${e.name} ${e.message}`);
+    if (!conn[which]) setStatus(which, `${which === 'bike' ? 'Bike' : 'HR'}: not connected`, '');
+  }
+}
+$('btnBike').onclick = () => pick('bike');
+$('btnHr').onclick = () => pick('hr');
+
+let wakeLock = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => wakeLock = null); } } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && running) keepAwake(); });
+
+// ---------- demo ----------
+let demoTimer = null;
+$('btnDemo').onclick = () => {
+  if (demoTimer) { clearInterval(demoTimer); demoTimer = null; $('btnDemo').textContent = 'Demo'; return; }
+  $('btnDemo').textContent = 'Stop demo';
+  startSession();
+  let t = 0, res = 8;
+  demoTimer = setInterval(() => {
+    t += 0.5;
+    if (Math.random() < 0.02) res = Math.max(1, Math.min(24, res + (Math.random() < 0.5 ? -2 : 2)));
+    const cad = 80 + 12 * Math.sin(t / 15) + (Math.random() - 0.5) * 4;
+    const pow = cad * res * 0.22 + (Math.random() - 0.5) * 10;
+    setM('cadence', cad, 1, 'Demo'); setM('power', pow, 1, 'Demo');
+    setM('speed', cad * 0.38, 1, 'Demo'); setM('resistance', res, 1, 'Demo');
+    setM('hr', 110 + pow / 6 + Math.sin(t / 30) * 4, 1, 'Demo');
+  }, 500);
+};
+
+// ---------- session ----------
+let running = false, active = 0, distInt = 0, energyJ = 0;
+let st, samples = [];
+function resetStats() { st = { sumP: 0, nP: 0, maxP: 0, sumC: 0, nC: 0, maxC: 0, sumH: 0, nH: 0, maxH: 0, maxS: 0 }; }
+resetStats();
+function startSession() { running = true; }
+$('btnReset').onclick = () => { active = 0; distInt = 0; energyJ = 0; samples = []; resetStats(); render(); drawChart(); };
+
+setInterval(() => {
+  const now = performance.now();
+  for (const k of ['power', 'cadence', 'speed']) if (M[k].v != null && now - M[k].t > 4000) { M[k].v = 0; M[k].rank = 99; }
+  if (M.hr.v != null && now - M.hr.t > 10000) { M.hr.v = null; M.hr.rank = 99; }
+  if (!running) return;
+  const p = M.power.v || 0, c = M.cadence.v || 0, s = M.speed.v || 0, h = M.hr.v;
+  if (c > 0 || p > 0) {
+    active++; distInt += s / 3.6; energyJ += Math.max(0, p);
+    st.sumP += p; st.nP++; st.maxP = Math.max(st.maxP, p);
+    st.sumC += c; st.nC++; st.maxC = Math.max(st.maxC, c);
+    st.maxS = Math.max(st.maxS, s);
+    if (h) { st.sumH += h; st.nH++; st.maxH = Math.max(st.maxH, h); }
+    samples.push({ t: active, power: Math.round(p), cadence: Math.round(c), speed: +s.toFixed(1), hr: h ? Math.round(h) : '', resistance: M.resistance.v ?? '' });
+  }
+  render(); drawChart();
+}, 1000);
+
+// ---------- render ----------
+let pending = false;
+function schedule() { if (!pending) { pending = true; requestAnimationFrame(() => { pending = false; render(); }); } }
+const fmtT = s => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60; return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+const r0 = v => v == null ? '—' : Math.round(v);
+function render() {
+  $('vPower').textContent = r0(M.power.v);
+  $('vCadence').textContent = r0(M.cadence.v);
+  $('vHr').textContent = r0(M.hr.v);
+  $('vSpeed').textContent = M.speed.v == null ? '—' : M.speed.v.toFixed(1);
+  $('vRes').textContent = r0(M.resistance.v);
+  $('vTime').textContent = fmtT(active);
+  const ftmsDist = M.distance.v != null && M.distance.rank === 1;
+  $('vDist').textContent = ((ftmsDist ? M.distance.v : distInt) / 1000).toFixed(2);
+  $('xDist').textContent = ftmsDist ? 'from bike' : 'from speed';
+  const ftmsKcal = M.kcal.v != null && M.kcal.rank === 1;
+  $('vKcal').textContent = Math.round(ftmsKcal ? M.kcal.v : energyJ / 1000);
+  $('xKcal').textContent = ftmsKcal ? 'from bike' : 'estimated from power';
+  const avg = (s, n) => n ? Math.round(s / n) : '—';
+  $('xPower').textContent = `avg ${avg(st.sumP, st.nP)} · max ${Math.round(st.maxP)} · ${Math.round(energyJ / 1000)} kJ`;
+  $('xCadence').textContent = `avg ${avg(st.sumC, st.nC)} · max ${Math.round(st.maxC)}`;
+  $('xHr').textContent = st.nH ? `avg ${avg(st.sumH, st.nH)} · max ${Math.round(st.maxH)}` : (M.hr.src ? M.hr.src : '');
+  $('xSpeed').textContent = st.maxS ? `max ${st.maxS.toFixed(1)}` : '';
+  const srcs = [...new Set(['power', 'cadence', 'speed'].map(k => M[k].src).filter(Boolean))];
+  $('sSrc').textContent = srcs.length ? 'Source: ' + srcs.join(', ') : '';
+}
+
+function drawChart() {
+  const c = $('chart'), dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const data = samples.slice(-300), N = 300;
+  const maxP = Math.max(200, ...data.map(d => d.power)) * 1.1;
+  const maxC = Math.max(130, ...data.map(d => d.cadence)) * 1.1;
+  const maxH = 200, padL = 34, padR = 34, padT = 6, padB = 16, pw = w - padL - padR, ph = h - padT - padB;
+  const css = getComputedStyle(document.documentElement);
+  g.strokeStyle = css.getPropertyValue('--line'); g.fillStyle = css.getPropertyValue('--muted'); g.font = '10px system-ui'; g.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = padT + ph * i / 4; g.beginPath(); g.moveTo(padL, y); g.lineTo(w - padR, y); g.stroke();
+    g.textAlign = 'right'; g.fillText(Math.round(maxP * (1 - i / 4)), padL - 4, y + 3);
+    g.textAlign = 'left'; g.fillText(Math.round(maxC * (1 - i / 4)), w - padR + 4, y + 3);
+  }
+  const line = (key, max, color) => {
+    g.strokeStyle = color; g.lineWidth = 2; g.beginPath(); let started = false;
+    data.forEach((d, i) => {
+      if (d[key] === '' || d[key] == null) { started = false; return; }
+      const x = padL + pw * (N - data.length + i) / (N - 1), y = padT + ph * (1 - d[key] / max);
+      started ? g.lineTo(x, y) : g.moveTo(x, y); started = true;
+    });
+    g.stroke();
+  };
+  line('hr', maxH, css.getPropertyValue('--hr'));
+  line('cadence', maxC, css.getPropertyValue('--cad'));
+  line('power', maxP, css.getPropertyValue('--power'));
+  g.fillStyle = css.getPropertyValue('--muted'); g.textAlign = 'left'; g.fillText('W', 4, h - 3); g.textAlign = 'right'; g.fillText('rpm', w - 4, h - 3);
+}
+window.addEventListener('resize', drawChart);
+
+$('btnCsv').onclick = () => {
+  if (!samples.length) return banner('Nothing recorded yet.');
+  const cols = ['t', 'power', 'cadence', 'speed', 'hr', 'resistance'];
+  const csv = [cols.join(','), ...samples.map(s => cols.map(c => s[c]).join(','))].join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `ride-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.csv`;
+  a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+
+if (!navigator.bluetooth) banner('This browser has no Web Bluetooth. Use Chrome or Edge on Mac, Windows or Android, or the Bluefy browser on iPhone/iPad. Demo mode works anywhere.');
+else if (!window.isSecureContext) banner('Web Bluetooth needs HTTPS or localhost. Serve this file locally (e.g. python3 -m http.server) or from an HTTPS host.');
+render(); drawChart();
+})();
+</script>
+</body>
+</html>
