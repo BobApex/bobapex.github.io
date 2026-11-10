@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v4</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v5</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -193,7 +193,7 @@ async function apexStart(server) {
   await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
   await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
   for (let i = 0; i < 3; i++) { await apexWrite(w, APEX_INIT, 'init'); await sleep(500); }
-  apexPollTimer = setInterval(() => { if (server.connected) apexWrite(w, APEX_POLL, ''); else { clearInterval(apexPollTimer); apexPollTimer = null; } }, 5000);
+  apexPollTimer = setInterval(() => { if (server.connected) apexWrite(w, APEX_POLL, ''); else { clearInterval(apexPollTimer); apexPollTimer = null; } }, 1000);
   log('Apex init done - start pedalling');
   return true;
 }
