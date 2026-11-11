@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v5</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v6</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -172,6 +172,7 @@ function parseApex(dv) {
   const raw = dv.getUint8(5);
   if (raw >= 1 && raw <= 32) apexRes = 33 - raw;
   if (dv.getUint8(3) === 0) apexCad = dv.getUint8(4) * 2;   // non-zero byte3 = known bogus cadence spike
+  if (dv.getUint8(4)) log(`cadence byte ${dv.getUint8(4)} -> ${apexCad} rpm`);
   return { resistance: apexRes, cadence: apexCad };
 }
 let apexPollTimer = null;
@@ -188,13 +189,12 @@ async function apexStart(server) {
   let svc;
   try { svc = await server.getPrimaryService(full(0xfff0)); } catch (e) { return false; }
   const w = await svc.getCharacteristic(CH.APEX_W);
-  log('Apex protocol: sending poll + init');
+  // Matches the Apex app (from HCI capture): FFF1 notifications + poll once a second, no init.
+  log('Apex protocol: polling every second');
   if (apexPollTimer) clearInterval(apexPollTimer);
-  await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
-  await apexWrite(w, APEX_POLL, 'poll'); await sleep(2000);
-  for (let i = 0; i < 3; i++) { await apexWrite(w, APEX_INIT, 'init'); await sleep(500); }
+  await apexWrite(w, APEX_POLL, 'poll');
   apexPollTimer = setInterval(() => { if (server.connected) apexWrite(w, APEX_POLL, ''); else { clearInterval(apexPollTimer); apexPollTimer = null; } }, 1000);
-  log('Apex init done - start pedalling');
+  log('Apex ready - start pedalling');
   return true;
 }
 
