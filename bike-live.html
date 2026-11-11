@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v8</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v9</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -73,7 +73,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
   </div>
   <details id="dbg">
     <summary>Bluetooth details &amp; raw data</summary>
-    <label class="opt"><input type="checkbox" id="optInit"> Send start command when connecting (QZ init: eb 50 51 01…)</label>
+    <label class="opt"><input type="checkbox" id="optInit" checked> Send start command when connecting (QZ init: eb 50 51 01…)</label>
     <label class="opt"><input type="checkbox" id="optAll"> Show all nearby devices when connecting (use if the bike doesn't appear)</label>
     <label class="opt">Extra service UUIDs to request (comma-separated, for proprietary protocols):
       <input type="text" id="optUuids" placeholder="e.g. 6e40fff0-b5a3-f393-e0a9-e50e24dcca9e"></label>
