@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v7</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v8</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -73,6 +73,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
   </div>
   <details id="dbg">
     <summary>Bluetooth details &amp; raw data</summary>
+    <label class="opt"><input type="checkbox" id="optInit"> Send start command when connecting (QZ init: eb 50 51 01…)</label>
     <label class="opt"><input type="checkbox" id="optAll"> Show all nearby devices when connecting (use if the bike doesn't appear)</label>
     <label class="opt">Extra service UUIDs to request (comma-separated, for proprietary protocols):
       <input type="text" id="optUuids" placeholder="e.g. 6e40fff0-b5a3-f393-e0a9-e50e24dcca9e"></label>
@@ -200,6 +201,10 @@ async function apexStart(server) {
   log('Apex protocol: polling every second');
   if (apexPollTimer) clearInterval(apexPollTimer);
   await apexWrite(w, APEX_POLL, 'poll');
+  if ($('optInit').checked) {
+    await sleep(1000); await apexWrite(w, APEX_POLL, 'poll'); await sleep(1000);
+    for (let i = 0; i < 3; i++) { await apexWrite(w, APEX_INIT, 'init'); await sleep(500); }
+  }
   apexPollTimer = setInterval(() => { if (server.connected) apexWrite(w, APEX_POLL, ''); else { clearInterval(apexPollTimer); apexPollTimer = null; } }, 1000);
   log('Apex ready - start pedalling');
   return true;
