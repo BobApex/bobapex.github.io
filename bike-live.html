@@ -36,14 +36,29 @@ summary{cursor:pointer;color:var(--muted)}
 pre{font:12px/1.35 ui-monospace,Menlo,Consolas,monospace;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-all;margin:8px 0 0}
 label.opt{display:block;margin:8px 0;font-size:13px;color:var(--muted)}
 input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:12px ui-monospace,Menlo,monospace}
+.route{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:10px 0}
+.route[hidden]{display:none}
+.route .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.route select,.route input[type=number]{background:var(--bg);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
+.route input[type=number]{width:70px}
+.route .small{font-size:12px;color:var(--muted)}
+.route label{font-size:13px;color:var(--muted)}
+.rgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:10px}
+#t-target .val{color:var(--warn)}
+#t-target.flash{animation:fl .9s ease 2}
+@keyframes fl{50%{background:#3a2a10}}
+.cue{font-size:15px;font-weight:600}
+.cue.up{color:var(--hr)}.cue.down{color:var(--cad)}.cue.ok{color:var(--ok)}
+#profile{height:170px;margin-top:10px}
 @media (max-width:420px){.big .val{font-size:56px}.val{font-size:32px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v9</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v10</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
+  <button id="btnRoute">Route</button>
   <button id="btnDemo">Demo</button>
   <button id="btnReset">Reset</button>
   <button id="btnCsv">CSV</button>
@@ -67,6 +82,29 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
     <div class="tile"><div class="label">Resistance</div><div class="val"><span id="vRes">—</span></div><div class="sub">level</div></div>
     <div class="tile"><div class="label">Energy</div><div class="val"><span id="vKcal">0</span><span class="unit">kcal</span></div><div class="sub" id="xKcal"></div></div>
   </div>
+  <section class="route" id="routePanel" hidden>
+    <div class="row">
+      <select id="routeSel" aria-label="Route"></select>
+      <label>or <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml"></label>
+      <button class="primary" id="btnRouteGo">Start route</button>
+      <button id="btnRouteStop">Stop</button>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <label>Flat level <input type="number" id="optFlat" min="1" max="32" value="6"></label>
+      <label>Levels per 1% <input type="number" id="optPer" min="0" max="5" step="0.5" value="2"></label>
+      <label>Rider + bike kg <input type="number" id="optMass" min="40" max="160" value="85"></label>
+      <label>Speed <select id="optSpeed"><option value="physics">Physics (power &amp; gradient)</option><option value="bike">Bike (cadence)</option></select></label>
+    </div>
+    <div class="small" id="routeInfo"></div>
+    <div class="rgrid">
+      <div class="tile" id="t-target"><div class="label">Target level</div><div class="val"><span id="vTarget">—</span></div><div class="cue" id="vCue"></div></div>
+      <div class="tile"><div class="label">Gradient</div><div class="val"><span id="vGrade">—</span><span class="unit">%</span></div><div class="sub" id="xNext"></div></div>
+      <div class="tile"><div class="label">Route distance</div><div class="val"><span id="vRDist">0.00</span><span class="unit">km</span></div><div class="sub" id="xRDist"></div></div>
+      <div class="tile"><div class="label">Climbed</div><div class="val"><span id="vClimb">0</span><span class="unit">m</span></div><div class="sub" id="xClimb"></div></div>
+      <div class="tile"><div class="label">Virtual speed</div><div class="val"><span id="vVSpeed">—</span><span class="unit">km/h</span></div><div class="sub" id="xVSpeed"></div></div>
+    </div>
+    <canvas id="profile"></canvas>
+  </section>
   <div class="chartwrap">
     <div class="legend"><span><i style="background:var(--power)"></i>Power</span><span><i style="background:var(--cad)"></i>Cadence</span><span><i style="background:var(--hr)"></i>HR</span><span>last 5 min</span></div>
     <canvas id="chart"></canvas>
@@ -421,14 +459,187 @@ setInterval(() => {
   const p = M.power.v || 0, c = M.cadence.v || 0, s = M.speed.v || 0, h = M.hr.v;
   if (c > 0 || p > 0) {
     active++; distInt += s / 3.6; energyJ += Math.max(0, p);
+    routeTick(p, s);
     st.sumP += p; st.nP++; st.maxP = Math.max(st.maxP, p);
     st.sumC += c; st.nC++; st.maxC = Math.max(st.maxC, c);
     st.maxS = Math.max(st.maxS, s);
     if (h) { st.sumH += h; st.nH++; st.maxH = Math.max(st.maxH, h); }
-    samples.push({ t: active, power: Math.round(p), cadence: Math.round(c), speed: +s.toFixed(1), hr: h ? Math.round(h) : '', resistance: M.resistance.v ?? '' });
+    samples.push({ t: active, power: Math.round(p), cadence: Math.round(c), speed: +s.toFixed(1), hr: h ? Math.round(h) : '', resistance: M.resistance.v ?? '', route_km: rActive || rDist ? +(rDist / 1000).toFixed(3) : '', grade: route ? +gradeAt(rDist).toFixed(1) : '', target: route ? targetLevel(gradeAt(rDist)) : '' });
   }
-  render(); drawChart();
+  render(); drawChart(); renderRoute();
 }, 1000);
+
+
+// ---------- routes ----------
+// Built-in profiles are approximations assembled from published section figures
+// (length, start/finish altitude, section gradients). Import a GPX for an exact route.
+const ROUTES = [
+  { id: 'boxhill', name: 'Box Hill (Zig Zag Road), Surrey', start: 42,
+    note: '4.3 km, 169 m, avg 3.9% (climbfinder.com). Approximate profile.',
+    segs: [[1.0, 1.5], [2.5, 5.5], [0.8, 2.0]] },
+  { id: 'alpe', name: "Alpe d'Huez from Bourg d'Oisans", start: 717,
+    note: "14.3 km, 717 to 1859 m (biketips.com): steepest in bends 21-17 (~11%), easing to 5-6% near the top. Approximate profile.",
+    segs: [[2.5, 10.5], [0.5, 3], [3.0, 8.5], [1.0, 6.5], [2.0, 9], [2.3, 8.5], [3.0, 5.6]] },
+  { id: 'ventoux', name: 'Mont Ventoux from Bédoin', start: 346,
+    note: '20 km, 346 to 1909 m (alti-mag.com): ~10% through the forest, 6-7% after Chalet Reynard, ~9% at the finish. Approximate profile.',
+    segs: [[5.0, 5.5], [8.0, 9.5], [4.0, 6.5], [3.0, 9.0]] },
+  { id: 'flat', name: 'Flat 10 km (warm-up)', start: 10, note: 'Flat, for warming up or testing.', segs: [[10, 0]] },
+];
+
+// Route model: pts = [{d (m), e (m)}], resampled every 100 m
+let route = null, rDist = 0, rClimb = 0, rTime = 0, rActive = false, lastTarget = null, rVSpeed = 0;
+
+function fromSegs(r) {
+  const pts = [{ d: 0, e: r.start }]; let d = 0, e = r.start;
+  for (const [km, g] of r.segs) { d += km * 1000; e += km * 1000 * g / 100; pts.push({ d, e }); }
+  return resample(pts, r.name, r.note);
+}
+function resample(pts, name, note) {
+  const total = pts[pts.length - 1].d, out = []; let j = 0;
+  for (let d = 0; d <= total + 1e-6; d += 100) {
+    while (j < pts.length - 2 && pts[j + 1].d < d) j++;
+    const a = pts[j], b = pts[j + 1] || a, f = b.d > a.d ? (d - a.d) / (b.d - a.d) : 0;
+    out.push({ d, e: a.e + f * (b.e - a.e) });
+  }
+  if (out[out.length - 1].d < total) out.push({ d: total, e: pts[pts.length - 1].e });
+  const gain = out.reduce((s, p, i) => s + (i && p.e > out[i - 1].e ? p.e - out[i - 1].e : 0), 0);
+  return { name, note, pts: out, total, gain };
+}
+function parseGPX(text, fname) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  const nodes = [...doc.getElementsByTagName('trkpt'), ...doc.getElementsByTagName('rtept')];
+  const raw = [];
+  for (const n of nodes) {
+    const ele = n.getElementsByTagName('ele')[0];
+    if (!ele) continue;
+    raw.push({ lat: +n.getAttribute('lat'), lon: +n.getAttribute('lon'), e: +ele.textContent });
+  }
+  if (raw.length < 2) throw new Error('No track points with elevation found in this GPX file.');
+  const R = 6371000, rad = x => x * Math.PI / 180, pts = [{ d: 0, e: raw[0].e }];
+  let d = 0;
+  for (let i = 1; i < raw.length; i++) {
+    const a = raw[i - 1], b = raw[i], dl = rad(b.lat - a.lat), dn = rad(b.lon - a.lon);
+    const h = Math.sin(dl / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dn / 2) ** 2;
+    const step = 2 * R * Math.asin(Math.sqrt(h));
+    if (step < 0.5) continue;
+    d += step; pts.push({ d, e: b.e });
+  }
+  const r = resample(pts, (doc.getElementsByTagName('name')[0]?.textContent || fname).trim(), 'Imported GPX');
+  // smooth elevation (5-point moving average) to tame GPS noise
+  const e = r.pts.map(p => p.e);
+  r.pts.forEach((p, i) => { if (i < 2 || i > e.length - 3) return; const w = e.slice(i - 2, i + 3); p.e = w.reduce((a, b) => a + b, 0) / 5; });
+  r.gain = r.pts.reduce((s, p, i) => s + (i && p.e > r.pts[i - 1].e ? p.e - r.pts[i - 1].e : 0), 0);
+  r.note = `Imported GPX: ${(r.total / 1000).toFixed(1)} km, ${Math.round(r.gain)} m climbing`;
+  return r;
+}
+function gradeAt(d) {
+  if (!route) return 0;
+  const P = route.pts; let i = Math.min(P.length - 2, Math.max(0, Math.floor(d / 100)));
+  while (i < P.length - 2 && P[i + 1].d <= d) i++;
+  const a = P[i], b = P[i + 1];
+  return b.d > a.d ? Math.max(-25, Math.min(25, (b.e - a.e) / (b.d - a.d) * 100)) : 0;
+}
+function eleAt(d) {
+  const P = route.pts; let i = Math.min(P.length - 2, Math.max(0, Math.floor(d / 100)));
+  while (i < P.length - 2 && P[i + 1].d <= d) i++;
+  const a = P[i], b = P[i + 1], f = b.d > a.d ? (d - a.d) / (b.d - a.d) : 0;
+  return a.e + f * (b.e - a.e);
+}
+const num = (id, def) => { const v = parseFloat($(id).value); return Number.isFinite(v) ? v : def; };
+function targetLevel(g) { return Math.max(1, Math.min(32, Math.round(num('optFlat', 6) + num('optPer', 2) * g))); }
+
+// steady-state speed from power on a gradient (simple road model)
+function physicsSpeed(P, gPct, mass) {
+  const g = 9.81, th = Math.atan(gPct / 100), Crr = 0.005, CdA = 0.32, rho = 1.225;
+  const F = v => v * (mass * g * (Math.sin(th) + Crr * Math.cos(th)) + 0.5 * rho * CdA * v * v) - P;
+  let lo = 0, hi = 25; // m/s, capped at 90 km/h
+  if (F(hi) < 0) return hi;
+  for (let k = 0; k < 50; k++) { const m = (lo + hi) / 2; if (F(m) > 0) hi = m; else lo = m; }
+  return lo;
+}
+
+function routeTick(p, bikeKmh) {
+  if (!rActive || !route) return;
+  const g = gradeAt(rDist);
+  const v = $('optSpeed').value === 'bike' ? bikeKmh / 3.6 : physicsSpeed(Math.max(0, p), g, num('optMass', 85));
+  rVSpeed = v * 3.6;
+  const e0 = eleAt(rDist);
+  rDist = Math.min(route.total, rDist + v);
+  const e1 = eleAt(rDist);
+  if (e1 > e0) rClimb += e1 - e0;
+  rTime++;
+  if (rDist >= route.total) { rActive = false; $('routeInfo').textContent = `Finished ${route.name} in ${fmtT(rTime)}.`; }
+}
+
+function renderRoute() {
+  if (!route) return;
+  const g = gradeAt(rDist), tgt = targetLevel(g), act = M.resistance.v;
+  $('vGrade').textContent = g.toFixed(1);
+  $('vTarget').textContent = tgt;
+  if (lastTarget != null && tgt !== lastTarget && rActive) { const t = $('t-target'); t.classList.remove('flash'); void t.offsetWidth; t.classList.add('flash'); }
+  lastTarget = tgt;
+  const cue = $('vCue');
+  if (act == null) { cue.className = 'cue'; cue.textContent = 'dial: no reading'; }
+  else if (Math.abs(tgt - act) <= 1) { cue.className = 'cue ok'; cue.textContent = `On target (dial ${act})`; }
+  else if (tgt > act) { cue.className = 'cue up'; cue.textContent = `Turn up ${tgt - act} (dial ${act})`; }
+  else { cue.className = 'cue down'; cue.textContent = `Ease off ${act - tgt} (dial ${act})`; }
+  // next gradient change of >= 1%
+  let nx = '';
+  for (let d = Math.ceil(rDist / 100) * 100; d < route.total; d += 100) {
+    const gg = gradeAt(d);
+    if (Math.abs(gg - g) >= 1) { nx = `${gg.toFixed(1)}% in ${Math.round(d - rDist)} m`; break; }
+  }
+  $('xNext').textContent = nx;
+  $('vRDist').textContent = (rDist / 1000).toFixed(2);
+  $('xRDist').textContent = `of ${(route.total / 1000).toFixed(1)} km · ${fmtT(rTime)}`;
+  $('vClimb').textContent = Math.round(rClimb);
+  $('xClimb').textContent = `of ${Math.round(route.gain)} m · alt ${Math.round(eleAt(rDist))} m`;
+  $('vVSpeed').textContent = rActive ? rVSpeed.toFixed(1) : '—';
+  $('xVSpeed').textContent = $('optSpeed').value === 'bike' ? 'from bike cadence' : 'from est. power & gradient';
+  drawProfile();
+}
+
+function drawProfile() {
+  const c = $('profile'); if (!route || !c.clientWidth) return;
+  const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const P = route.pts, emin = Math.min(...P.map(p => p.e)), emax = Math.max(...P.map(p => p.e));
+  const pad = 46, X = d => pad + (w - pad - 8) * d / route.total, Y = e => h - 18 - (h - 30) * (e - emin) / Math.max(1, emax - emin);
+  const css = getComputedStyle(document.documentElement);
+  for (let i = 1; i < P.length; i++) {
+    const gr = (P[i].e - P[i - 1].e) / Math.max(1, P[i].d - P[i - 1].d) * 100;
+    g.fillStyle = gr >= 10 ? '#d6455d' : gr >= 7 ? '#ff8a3d' : gr >= 4 ? '#ffc53d' : gr >= 1 ? '#7bc96f' : '#3d6f9e';
+    if (P[i].d > rDist) g.globalAlpha = 0.45; else g.globalAlpha = 1;
+    g.beginPath(); g.moveTo(X(P[i - 1].d), h - 18); g.lineTo(X(P[i - 1].d), Y(P[i - 1].e)); g.lineTo(X(P[i].d), Y(P[i].e)); g.lineTo(X(P[i].d), h - 18); g.fill();
+  }
+  g.globalAlpha = 1;
+  const x = X(rDist); g.strokeStyle = css.getPropertyValue('--text'); g.lineWidth = 2;
+  g.beginPath(); g.moveTo(x, 4); g.lineTo(x, h - 18); g.stroke();
+  g.fillStyle = css.getPropertyValue('--muted'); g.font = '10px system-ui'; g.textAlign = 'left';
+  g.fillText(`${Math.round(emax)} m`, 2, 12); g.fillText(`${Math.round(emin)} m`, 2, h - 20);
+  g.textAlign = 'right'; g.fillText(`${(route.total / 1000).toFixed(1)} km`, w - 2, h - 4);
+}
+
+// settings persistence (per-viewer convenience only)
+const RKEYS = ['optFlat', 'optPer', 'optMass', 'optSpeed'];
+try { const saved = JSON.parse(localStorage.getItem('bikeLiveRoute') || '{}'); RKEYS.forEach(k => { if (saved[k] != null) $(k).value = saved[k]; }); } catch (e) {}
+RKEYS.forEach(k => $(k).addEventListener('change', () => {
+  try { localStorage.setItem('bikeLiveRoute', JSON.stringify(Object.fromEntries(RKEYS.map(x => [x, $(x).value])))); } catch (e) {}
+  renderRoute();
+}));
+
+function loadRoute(r) { route = r; rDist = 0; rClimb = 0; rTime = 0; rActive = false; lastTarget = null; $('routeInfo').textContent = r.note || ''; renderRoute(); }
+$('routeSel').innerHTML = ROUTES.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+$('routeSel').onchange = () => loadRoute(fromSegs(ROUTES.find(r => r.id === $('routeSel').value)));
+$('gpxFile').onchange = async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try { loadRoute(parseGPX(await f.text(), f.name.replace(/\.gpx$/i, ''))); }
+  catch (e) { $('routeInfo').textContent = 'Could not read GPX: ' + errText(e); }
+};
+$('btnRoute').onclick = () => { const pnl = $('routePanel'); pnl.hidden = !pnl.hidden; if (!pnl.hidden) { if (!route) $('routeSel').onchange(); else renderRoute(); } };
+$('btnRouteGo').onclick = () => { if (!route) $('routeSel').onchange(); if (rDist >= route.total) loadRoute(route); rActive = true; startSession(); $('routeInfo').textContent = (route.note || '') + ' · Riding: dial in the target level.'; renderRoute(); };
+$('btnRouteStop').onclick = () => { rActive = false; renderRoute(); };
 
 // ---------- render ----------
 let pending = false;
@@ -487,11 +698,11 @@ function drawChart() {
   line('power', maxP, css.getPropertyValue('--power'));
   g.fillStyle = css.getPropertyValue('--muted'); g.textAlign = 'left'; g.fillText('W', 4, h - 3); g.textAlign = 'right'; g.fillText('rpm', w - 4, h - 3);
 }
-window.addEventListener('resize', drawChart);
+window.addEventListener('resize', () => { drawChart(); drawProfile(); });
 
 $('btnCsv').onclick = () => {
   if (!samples.length) return banner('Nothing recorded yet.');
-  const cols = ['t', 'power', 'cadence', 'speed', 'hr', 'resistance'];
+  const cols = ['t', 'power', 'cadence', 'speed', 'hr', 'resistance', 'route_km', 'grade', 'target'];
   const csv = [cols.join(','), ...samples.map(s => cols.map(c => s[c]).join(','))].join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
