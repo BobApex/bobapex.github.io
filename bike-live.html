@@ -41,7 +41,7 @@ input[type=text]{width:100%;background:var(--bg);color:var(--text);border:1px so
 </head>
 <body>
 <header>
-  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v6</span></h1>
+  <h1>Bike Live <span style="font-size:12px;color:var(--muted);font-weight:400">v7</span></h1>
   <button class="primary" id="btnBike">Connect bike</button>
   <button id="btnHr">Connect HR strap</button>
   <button id="btnDemo">Demo</button>
@@ -93,7 +93,14 @@ const NAMES = {
   [CH.HR]: 'Heart Rate Measurement', [CH.BATT]: 'Battery Level',
   [full(0xfff0)]: 'Apex (FFF0)', [CH.APEX_N]: 'Apex data (FFF1)', [CH.APEX_W]: 'Apex cmd (FFF2)'
 };
-const nm = u => NAMES[u] || u;
+// Bluefy reports UUIDs in short uppercase form ("FFF1"); normalise to full lowercase 128-bit.
+const norm = u => {
+  u = String(u).toLowerCase();
+  if (/^[0-9a-f]{4}$/.test(u)) return full(parseInt(u, 16));
+  if (/^[0-9a-f]{8}$/.test(u)) return u + '-0000-1000-8000-00805f9b34fb';
+  return u;
+};
+const nm = u => NAMES[norm(u)] || u;
 const WHEEL_CIRC_M = 2.105; // only used if the bike reports wheel revolutions (CP/CSC)
 
 // ---------- logging ----------
@@ -242,7 +249,8 @@ const trk = {
 };
 
 function onData(uuid, dv) {
-  log(`${nm(uuid)}: ${hex(dv)}`);
+  uuid = norm(uuid);
+  log(`${uuid === CH.APEX_N ? 'FFF1' : nm(uuid)}: ${hex(dv)}`);
   if (uuid === CH.INDOOR) {
     const r = parseIndoorBike(dv);
     for (const k of ['speed', 'cadence', 'power', 'resistance', 'distance', 'kcal', 'hr']) if (k in r) setM(k, r[k], k === 'hr' ? 2 : 1, 'FTMS');
@@ -295,7 +303,7 @@ async function subscribeAll(server, which) {
     for (const c of chars) {
       const p = c.properties, props = ['read', 'write', 'writeWithoutResponse', 'notify', 'indicate'].filter(x => p[x]).join(',');
       log(`  Char ${nm(c.uuid)} [${props}]`);
-      if (s.uuid === full(S.DIS) && p.read) {
+      if (norm(s.uuid) === full(S.DIS) && p.read) {
         try { const v = await c.readValue(); log(`    = ${new TextDecoder().decode(v)}`); } catch (e) {}
       }
       if (p.notify || p.indicate) {
@@ -307,7 +315,7 @@ async function subscribeAll(server, which) {
       }
     }
   }
-  const have = services.map(s => s.uuid);
+  const have = services.map(s => norm(s.uuid));
   const known = [S.FTMS, S.CP, S.CSC, S.HR].map(full).filter(u => have.includes(u)).map(nm);
   return known;
 }
